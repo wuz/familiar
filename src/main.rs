@@ -9,7 +9,8 @@ use std::io::BufReader;
 use std::io::prelude::*;
 use tico::tico;
 use git2::{ Repository, Status };
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use shellexpand;
 
 // struct Plugin {
 //     name: String
@@ -39,8 +40,9 @@ fn main() {
             .takes_value(true)
         )
         .get_matches();
-    let config_file = matches.value_of("config").unwrap_or("~/config/familiar/familiar.toml");
-    let f = File::open(config_file).unwrap();
+    let config_file_str = matches.value_of("config").unwrap_or("~/.config/familiar/familiar.toml");
+    let config_file = shellexpand::full(config_file_str).unwrap();
+    let f = File::open(config_file.to_string()).unwrap();
     let mut reader = BufReader::new(f);
 
     let mut contents = String::new();
@@ -62,7 +64,7 @@ fn cwd() -> String {
     return tico(&path);
 }
 
-fn git() -> Option<String> {
+fn git() -> Option<(String, String)> {
     let current_dir = env::var("PWD").unwrap();
     let mut repo: Option<Repository> = None;
     let current_path = Path::new(&current_dir[..]);
@@ -91,19 +93,43 @@ fn git() -> Option<String> {
         let id = commit.id();
         branch = format!("({:.6})", id);
     }
+    let stat_char = "·".into();
+    let mut repo_stat = stat_char;
+    let file_stats = repo.statuses(None).unwrap();
+     for file in file_stats.iter() {
+        match file.status() {
+            // STATE: unstaged (working tree modified)
+            Status::WT_NEW        | Status::WT_MODIFIED      |
+            Status::WT_DELETED    | Status::WT_TYPECHANGE    |
+            Status::WT_RENAMED => {
+                let stat_char = "×".into();
+                repo_stat = stat_char;
+                break;
+            },
+            // STATE: staged (changes added to index)
+            Status::INDEX_NEW     | Status::INDEX_MODIFIED   |
+            Status::INDEX_DELETED | Status::INDEX_TYPECHANGE |
+            Status::INDEX_RENAMED => {
+                let stat_char = "±".into();
+                repo_stat = stat_char;
+            },
+            // STATE: committed (changes have been saved in the repo)
+            _ => {}
+        }
+    }
 
-    return Some(branch)
+    return Some((branch, repo_stat))
 }
 
 fn familiar(prompt_char: String) -> String {
     let cwd = cwd();
-    let branch = git().unwrap_or("".into());
+    let (branch, status) = git().unwrap_or(("".into(), "".into()));
     return format!(
         // "{cwd} {branch} {status}\n{venv}{pchar} ",
-        "{cwd} {branch} \n{pchar} ",
+        "{cwd} {branch} {status} \n{pchar} ",
         cwd = cwd,
         branch = branch,
-        // status = status,
+        status = status,
         // venv = venv,
         pchar = prompt_char
     )
