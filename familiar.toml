@@ -1,0 +1,9 @@
+[options]
+minimal = false
+prompt_char = "»"
+
+[[plugins]]
+name = "python"
+
+[[plugins]]
+name = "javascript"
