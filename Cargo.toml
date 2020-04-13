@@ -16,3 +16,4 @@ toml = "0.5"
 tico = "1.0.0"
 serde = { version = "1.0", features = ["derive"] }
 git2 = "0.13"
+colored = { path = "./colored", version = "1.8.0" }

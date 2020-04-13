@@ -1,4 +1,3 @@
-extern crate clap;
 use std::env;
 use clap::{Arg, App};
 use serde::Deserialize;
@@ -11,6 +10,9 @@ use tico::tico;
 use git2::{ Repository, Status };
 use std::path::{Path, PathBuf};
 use shellexpand;
+use colored::*;
+use std::borrow::Cow;
+use std::io::{self, Write};
 
 // struct Plugin {
 //     name: String
@@ -49,22 +51,40 @@ fn main() {
     reader.read_to_string(&mut contents).unwrap();
     let config: Config = toml::from_str(&contents).unwrap();
     let prompt_char = config.options.prompt_char;
-    println!("{}", familiar(prompt_char));
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    write!(handle, "{}", familiar(prompt_char)).unwrap();
 }
 
-fn cwd() -> String {
-    let path_env = env::current_dir().unwrap();
-    let mut path = format!("{}", path_env.display());
+fn replace_home_dir<'a>(path: &'a str) -> String {
     let home = env::var("HOME").unwrap();
     let home_dir = &home.clone();
     let home_dir_ext = format!("{}{}", home_dir, "/");
-    if (&path == home_dir) || *(&path.starts_with(&home_dir_ext)) {
-        path = path.replacen(&home_dir[..], "~", 1);
+    match &path {
+        p if p == home_dir => path.replacen(&home_dir[..], "~", 1),
+        p if p.starts_with(&home_dir_ext) => path.replacen(&home_dir[..], "~", 1),
+        _ => path.to_string()
     }
-    return tico(&path);
 }
 
-fn git() -> Option<(String, String)> {
+fn basename<'a>(path: &'a str, sep: char) -> (String, Cow<'a, str>) {
+    let mut pieces = path.rsplit(sep);
+    match pieces.next() {
+        Some(p) => (pieces.filter(|&i|i != p).rev().collect::<Vec<&str>>().join("/"), p.into()),
+        None => (path.into(), "".into()),
+    }
+}
+
+fn cwd() -> Option<(String, String)> {
+    let path_env = env::current_dir().unwrap();
+    let mut path = format!("{}", path_env.display());
+    path = replace_home_dir(&path).to_string();
+    let short_path = tico(&path);
+    let (rest_path, basename) = basename(&short_path, '/');
+    return Some((rest_path, basename.to_string()));
+}
+
+fn git() -> Option<(colored::ColoredString, colored::ColoredString)> {
     let current_dir = env::var("PWD").unwrap();
     let mut repo: Option<Repository> = None;
     let current_path = Path::new(&current_dir[..]);
@@ -85,52 +105,56 @@ fn git() -> Option<(String, String)> {
         Ok(r) => r,
         Err(_) => return None
     };
-    let mut branch;
+    let branch;
     if reference.is_branch() {
-        branch = format!("({})", reference.shorthand().unwrap());
+        branch = format!("{}", reference.shorthand().unwrap());
     } else {
         let commit = reference.peel_to_commit().unwrap();
         let id = commit.id();
-        branch = format!("({:.6})", id);
+        branch = format!("{:.6}", id);
     }
     let stat_char = "·".into();
     let mut repo_stat = stat_char;
     let file_stats = repo.statuses(None).unwrap();
-     for file in file_stats.iter() {
+    for file in file_stats.iter() {
         match file.status() {
             // STATE: unstaged (working tree modified)
             Status::WT_NEW        | Status::WT_MODIFIED      |
-            Status::WT_DELETED    | Status::WT_TYPECHANGE    |
-            Status::WT_RENAMED => {
-                let stat_char = "×".into();
-                repo_stat = stat_char;
-                break;
-            },
-            // STATE: staged (changes added to index)
-            Status::INDEX_NEW     | Status::INDEX_MODIFIED   |
-            Status::INDEX_DELETED | Status::INDEX_TYPECHANGE |
-            Status::INDEX_RENAMED => {
-                let stat_char = "±".into();
-                repo_stat = stat_char;
-            },
-            // STATE: committed (changes have been saved in the repo)
-            _ => {}
+                Status::WT_DELETED    | Status::WT_TYPECHANGE    |
+                Status::WT_RENAMED => {
+                    let stat_char = "×".red().into();
+                    repo_stat = stat_char;
+                    break;
+                },
+                // STATE: staged (changes added to index)
+                Status::INDEX_NEW     | Status::INDEX_MODIFIED   |
+                    Status::INDEX_DELETED | Status::INDEX_TYPECHANGE |
+                    Status::INDEX_RENAMED => {
+                        let stat_char = "±".yellow().into();
+                        repo_stat = stat_char;
+                    },
+                    // STATE: committed (changes have been saved in the repo)
+                _ => {}
         }
     }
 
-    return Some((branch, repo_stat))
+    let color_branch = branch.blue().bold().italic();
+    return Some((color_branch, repo_stat))
 }
 
 fn familiar(prompt_char: String) -> String {
-    let cwd = cwd();
+    let (rest_path, basename) = cwd().unwrap_or(("".into(), "".into()));
     let (branch, status) = git().unwrap_or(("".into(), "".into()));
-    return format!(
-        // "{cwd} {branch} {status}\n{venv}{pchar} ",
-        "{cwd} {branch} {status} \n{pchar} ",
-        cwd = cwd,
+    let mut rest = rest_path;
+    if rest != "" {
+      rest = rest + "/";
+    }
+    format!(
+        "{rest_path}{basename} {branch} {status} \n{pchar} ",
+        rest_path = rest.black().bold(),
+        basename = basename.cyan(),
         branch = branch,
         status = status,
-        // venv = venv,
         pchar = prompt_char
     )
 }
