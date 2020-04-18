@@ -113,12 +113,11 @@ fn git() -> Option<(colored::ColoredString, colored::ColoredString)> {
         let id = commit.id();
         branch = format!("{:.6}", id);
     }
-    let stat_char = "·".into();
+    let stat_char = "·".green().into();
     let mut repo_stat = stat_char;
     let file_stats = repo.statuses(None).unwrap();
     for file in file_stats.iter() {
         match file.status() {
-            // STATE: unstaged (working tree modified)
             Status::WT_NEW        | Status::WT_MODIFIED      |
                 Status::WT_DELETED    | Status::WT_TYPECHANGE    |
                 Status::WT_RENAMED => {
@@ -126,14 +125,12 @@ fn git() -> Option<(colored::ColoredString, colored::ColoredString)> {
                     repo_stat = stat_char;
                     break;
                 },
-                // STATE: staged (changes added to index)
                 Status::INDEX_NEW     | Status::INDEX_MODIFIED   |
                     Status::INDEX_DELETED | Status::INDEX_TYPECHANGE |
                     Status::INDEX_RENAMED => {
                         let stat_char = "±".yellow().into();
                         repo_stat = stat_char;
                     },
-                    // STATE: committed (changes have been saved in the repo)
                 _ => {}
         }
     }
@@ -147,12 +144,12 @@ fn familiar(prompt_char: String) -> String {
     let (branch, status) = git().unwrap_or(("".into(), "".into()));
     let mut rest = rest_path;
     if rest != "" {
-      rest = rest + "/";
+        rest = rest + "/";
     }
     format!(
         "{rest_path}{basename} {branch} {status} \n{pchar} ",
-        rest_path = rest.black().bold(),
-        basename = basename.cyan(),
+        rest_path = rest.white(),
+        basename = basename.purple().bold(),
         branch = branch,
         status = status,
         pchar = prompt_char
